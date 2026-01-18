@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+</head>
+
+<body>
+  
+</body>
+
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Hyper-Run 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Orbitron', sans-serif; }
+        #ui {
+            position: absolute; top: 5%; width: 100%; display: flex; 
+            justify-content: space-around; color: #0ff; font-size: 24px;
+            text-shadow: 0 0 10px #0ff; pointer-events: none; z-index: 10;
+        }
+        #game-over {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); display: none; flex-direction: column;
+            align-items: center; justify-content: center; color: white; z-index: 20;
+        }
+        button {
+            padding: 15px 40px; font-size: 20px; background: #0ff; border: none;
+            cursor: pointer; border-radius: 50px; font-weight: bold; margin-top: 20px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="ui">
+        <div>SCORE: <span id="score">0</span></div>
+        <div>SPEED: <span id="speed-val">1x</span></div>
+    </div>
+
+    <div id="game-over">
+        <h1>CRASHED!</h1>
+        <p>Final Score: <span id="final-score">0</span></p>
+        <button onclick="location.reload()">RETRY</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        let scene, camera, renderer, player, clock;
+        let lane = 0; 
+        let score = 0;
+        let obstacles = [];
+        let gameActive = true;
+        let speed = 0.4;
+        let isJumping = false;
+        let jumpVelocity = 0;
+        const laneWidth = 2.5;
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020205);
+            scene.fog = new THREE.Fog(0x020205, 15, 55);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 4, 8);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // Neon Grid Floor
+            const grid = new THREE.GridHelper(200, 50, 0xff00ff, 0x111111);
+            grid.position.z = -50;
+            scene.add(grid);
+
+            // Lighting
+            const pLight = new THREE.PointLight(0x00ffff, 2, 20);
+            pLight.position.set(0, 5, 5);
+            scene.add(pLight);
+
+            // Player - Stylish "Ship" Shape
+            const playerGroup = new THREE.Group();
+            const bodyGeo = new THREE.BoxGeometry(1, 0.5, 1.5);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.8 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            playerGroup.add(body);
+            
+            // Jet Thruster
+            const thrusterGeo = new THREE.BoxGeometry(0.6, 0.2, 0.2);
+            const thrusterMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+            const thruster = new THREE.Mesh(thrusterGeo, thrusterMat);
+            thruster.position.z = 0.8;
+            playerGroup.add(thruster);
+
+            player = playerGroup;
+            player.position.y = 0.5;
+            scene.add(player);
+
+            setupControls();
+        }
+
+        function setupControls() {
+            // Keys
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowLeft' || e.key === 'a') moveLane(-1);
+                if (e.key === 'ArrowRight' || e.key === 'd') moveLane(1);
+                if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') jump();
+            });
+
+            // Swipe Logic (Mobile)
+            let startX, startY;
+            document.addEventListener('touchstart', e => {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+            });
+            document.addEventListener('touchend', e => {
+                let diffX = e.changedTouches[0].clientX - startX;
+                let diffY = e.changedTouches[0].clientY - startY;
+                
+                if (Math.abs(diffX) > Math.abs(diffY)) {
+                    if (diffX > 50) moveLane(1);
+                    else if (diffX < -50) moveLane(-1);
+                } else {
+                    if (diffY < -50) jump();
+                }
+            });
+        }
+
+        function moveLane(dir) {
+            lane = Math.max(-1, Math.min(1, lane + dir));
+        }
+
+        function jump() {
+            if (!isJumping) {
+                isJumping = true;
+                jumpVelocity = 0.25;
+            }
+        }
+
+        function spawnObstacle() {
+            if (!gameActive) return;
+            const h = Math.random() > 0.7 ? 3 : 1; // Tall or short obstacles
+            const geo = new THREE.BoxGeometry(1.5, h, 1);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0xff0055 });
+            const obs = new THREE.Mesh(geo, mat);
+            
+            obs.position.set((Math.floor(Math.random() * 3) - 1) * laneWidth, h/2, -60);
+            scene.add(obs);
+            obstacles.push(obs);
+        }
+
+        setInterval(spawnObstacle, 700);
+
+        function animate() {
+            if (!gameActive) return;
+            requestAnimationFrame(animate);
+
+            // Handle Jump Physics
+            if (isJumping) {
+                player.position.y += jumpVelocity;
+                jumpVelocity -= 0.015; // Gravity
+                if (player.position.y <= 0.5) {
+                    player.position.y = 0.5;
+                    isJumping = false;
+                }
+            }
+
+            // Smooth Lane Transition
+            player.position.x += (lane * laneWidth - player.position.x) * 0.15;
+            player.rotation.y = (player.position.x - lane * laneWidth) * -0.2; // Bank turn
+
+            // Dynamic Camera
+            camera.position.x = player.position.x * 0.4;
+            camera.lookAt(player.position.x * 0.5, 1, 0);
+
+            // Obstacles
+            obstacles.forEach((obs, i) => {
+                obs.position.z += speed;
+
+                // Precision Collision
+                const pBox = new THREE.Box3().setFromObject(player);
+                const oBox = new THREE.Box3().setFromObject(obs);
+                if (pBox.intersectsBox(oBox)) {
+                    gameActive = false;
+                    document.getElementById('game-over').style.display = 'flex';
+                    document.getElementById('final-score').innerText = score;
+                }
+
+                if (obs.position.z > 15) {
+                    scene.remove(obs);
+                    obstacles.splice(i, 1);
+                    score += 10;
+                    document.getElementById('score').innerText = score;
+                    speed += 0.001;
+                    document.getElementById('speed-val').innerText = (speed*5).toFixed(1) + "x";
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
